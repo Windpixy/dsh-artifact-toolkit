@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "title": "产物右键菜单",
+    "description": "给会话里的产物卡片、已编辑文件卡片和正文里的文件链接加上右键菜单：复制完整路径或短路径，打开所在文件夹，用默认程序打开。"
+  },
+  "copyPath": "复制完整路径",
+  "copyPathHint": "整条路径，可粘贴到资源管理器地址栏",
+  "copyRelative": "复制短路径",
+  "copyRelativeHint": "相对当前项目目录，适合发给 AI",
+  "copyName": "复制文件名",
+  "copyAll": "复制全部完整路径",
+  "copyAllHint": "每行一条，共 {count} 个文件",
+  "copyAllName": "复制全部文件名",
+  "reveal": "打开所在文件夹",
+  "openWith": "用默认程序打开",
+  "preview": "在侧栏预览",
+  "copied": "已复制",
+  "copiedAll": "已复制 {count} 个路径",
+  "copiedName": "已复制 {name}",
+  "copyFailed": "复制失败",
+  "revealFailed": "无法打开所在文件夹",
+  "openFailed": "无法打开文件",
+  "previewFailed": "无法在侧栏打开",
+  "unavailable": "当前环境不支持在系统里打开文件"
+}

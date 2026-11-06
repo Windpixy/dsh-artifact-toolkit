@@ -1,0 +1,4 @@
+# Insert this bundle's plugin row into the profile composition.
+- insert:
+    - id: local-artifact-menu
+      name: 'dsh-artifact-toolkit'

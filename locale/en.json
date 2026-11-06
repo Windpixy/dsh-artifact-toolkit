@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "title": "Artifact Context Menu",
+    "description": "Right-click menus on artifact cards, changed-file cards and file links in the reply: copy the full or short path, show the file in its folder, or open it in its default app."
+  },
+  "copyPath": "Copy full path",
+  "copyPathHint": "The whole path — paste it into the address bar",
+  "copyRelative": "Copy short path",
+  "copyRelativeHint": "Relative to the project — handy when talking to an AI",
+  "copyName": "Copy file name",
+  "copyAll": "Copy all full paths",
+  "copyAllHint": "One per line, {count} files",
+  "copyAllName": "Copy all file names",
+  "reveal": "Show in folder",
+  "openWith": "Open in default app",
+  "preview": "Preview in sidebar",
+  "copied": "Copied",
+  "copiedAll": "Copied {count} paths",
+  "copiedName": "Copied {name}",
+  "copyFailed": "Copy failed",
+  "revealFailed": "Could not show in folder",
+  "openFailed": "Could not open file",
+  "previewFailed": "Could not open in the sidebar",
+  "unavailable": "This environment cannot open files on the system"
+}

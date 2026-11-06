@@ -1,0 +1,62 @@
+{
+  "name": "dsh-artifact-toolkit",
+  "version": "0.1.0",
+  "description": "给 DSH 会话里的产物卡片、已编辑文件卡片和正文文件链接加上右键菜单：复制完整/短路径、打开所在文件夹、用默认程序打开。",
+  "license": "MIT",
+  "author": "Windpixy",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "context-menu",
+    "artifact",
+    "right-click",
+    "file-path",
+    "clipboard"
+  ],
+  "icon": "./icon.svg",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Windpixy/dsh-artifact-toolkit.git"
+  },
+  "homepage": "https://github.com/Windpixy/dsh-artifact-toolkit#readme",
+  "bugs": {
+    "url": "https://github.com/Windpixy/dsh-artifact-toolkit/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE",
+    "screenshots.json",
+    "docs/images/*.png"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    },
+    "manifestVersion": 1
+  }
+}
