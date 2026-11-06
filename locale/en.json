@@ -21,5 +21,6 @@
   "revealFailed": "Could not show in folder",
   "openFailed": "Could not open file",
   "previewFailed": "Could not open in the sidebar",
+  "nameOnlyNote": "This link records only the file name, so its folder is unknown",
   "unavailable": "This environment cannot open files on the system"
 }

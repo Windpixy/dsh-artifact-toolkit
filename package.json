@@ -1,6 +1,6 @@
 {
   "name": "dsh-artifact-toolkit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "给 DSH 会话里的产物卡片、已编辑文件卡片和正文文件链接加上右键菜单：复制完整/短路径、打开所在文件夹、用默认程序打开。",
   "license": "MIT",
   "author": "Windpixy",

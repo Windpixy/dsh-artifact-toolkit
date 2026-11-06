@@ -21,5 +21,6 @@
   "revealFailed": "无法打开所在文件夹",
   "openFailed": "无法打开文件",
   "previewFailed": "无法在侧栏打开",
+  "nameOnlyNote": "这条链接只记录了文件名，拿不到所在目录",
   "unavailable": "当前环境不支持在系统里打开文件"
 }

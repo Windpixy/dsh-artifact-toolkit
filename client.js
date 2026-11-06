@@ -59,6 +59,7 @@ window.__ModuleLoader__.load({
       revealFailed: '无法打开所在文件夹',
       openFailed: '无法打开文件',
       previewFailed: '无法在侧栏打开',
+      nameOnlyNote: '这条链接只记录了文件名，拿不到所在目录',
       unavailable: '当前环境不支持在系统里打开文件',
     };
 
@@ -81,6 +82,7 @@ window.__ModuleLoader__.load({
       revealFailed: 'Could not show in folder',
       openFailed: 'Could not open file',
       previewFailed: 'Could not open in the sidebar',
+      nameOnlyNote: 'This link records only the file name, so its folder is unknown',
       unavailable: 'This environment cannot open files on the system',
     };
 
@@ -92,6 +94,24 @@ window.__ModuleLoader__.load({
       const text = value.trim();
       if (text === '' || text.length > 4096) return false;
       return /^[a-zA-Z]:[\\/]/.test(text) || text.startsWith('\\\\') || text.startsWith('/') || /[\\/]/.test(text);
+    }
+
+    /**
+     * Whether a value is a bare file name that still identifies a file, such as
+     * `PerfCard-便携版.zip`. The renderer publishes only the name when the link
+     * does not resolve to a recorded session file, so the directory is unknown —
+     * but the name itself is exact and worth offering.
+     * @param value - the candidate string.
+     * @returns whether it looks like a bare file name with an extension.
+     */
+    function looksLikeFileName(value) {
+      if (typeof value !== 'string') return false;
+      const text = value.trim();
+      if (text === '' || text.length > 255) return false;
+      // A separator or drive letter means it is a path, which takes the other branch.
+      if (/[\\/]/.test(text) || /^[a-zA-Z]:/.test(text)) return false;
+      // Require an extension so ordinary prose never qualifies.
+      return /\.[A-Za-z0-9]{1,12}$/.test(text);
     }
 
     /** Whether a path is rooted (drive letter, UNC, or POSIX). */
@@ -240,13 +260,18 @@ window.__ModuleLoader__.load({
       // the shipped renderer produces: a `data-ref-chip` button (a delivered or
       // produced path mentioned in backticks) and a plain button with the
       // `fileMention` class (an explicit Markdown link to a file). Both publish
-      // the full target as `title`; a bare name without one stays inert rather
-      // than guessing a directory.
+      // the target as `title`. When the link resolved to a recorded session file
+      // that title is a full path; when it did not, it is only the file name —
+      // still exact, so the name-only actions are offered and the ones needing a
+      // directory are hidden rather than guessing one.
       const chip = target.closest('[data-ref-chip]');
       if (chip !== null && chip.tagName === 'BUTTON') {
         const title = chip.getAttribute('title')?.trim();
         if (title !== undefined && looksLikePath(title)) {
           return { kind: 'inline', path: title, paths: [title], anchor: chip };
+        }
+        if (title !== undefined && looksLikeFileName(title)) {
+          return { kind: 'inline', path: title, paths: [title], anchor: chip, nameOnly: true };
         }
       }
       const button = target.closest('button[title]');
@@ -254,6 +279,9 @@ window.__ModuleLoader__.load({
         const title = button.getAttribute('title')?.trim();
         if (title !== undefined && looksLikePath(title)) {
           return { kind: 'inline', path: title, paths: [title], anchor: button };
+        }
+        if (title !== undefined && looksLikeFileName(title)) {
+          return { kind: 'inline', path: title, paths: [title], anchor: button, nameOnly: true };
         }
       }
       return null;
@@ -391,6 +419,9 @@ window.__ModuleLoader__.load({
 .dam-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dam-hint{font-size:11px;line-height:15px;color:var(--dsw-alias-label-tertiary, #6b7280);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* An explanation row: not clickable, so it must not look like a menu item. */
+.dam-note{padding:4px 8px 2px;font-size:11px;line-height:15px;white-space:normal;
+  color:var(--dsw-alias-label-tertiary, #6b7280)}
 .dam-sep{height:1px;margin:4px 6px;background:var(--dsw-alias-border-l2, rgba(0,0,0,.1))}
 .dam-toast{position:fixed;left:50%;bottom:48px;transform:translateX(-50%);pointer-events:none;
   padding:6px 14px;border-radius:999px;color:#fff;font-size:12px;font-weight:500;line-height:18px;
@@ -521,7 +552,18 @@ window.__ModuleLoader__.load({
         const count = request.paths.length;
         const many = count > 1;
         const params = { count: String(count) };
+        // A reference that carried only a file name has no known directory, so
+        // everything needing a path would have to be guessed. Offer just the
+        // action whose result is exact.
+        const nameOnly = request.nameOnly === true;
         const rows = [];
+        if (hasOne && nameOnly) {
+          // The reference carried only a name, so say why the rest is missing
+          // rather than offering a shorter menu with no explanation.
+          rows.push({ id: 'copyName', icon: 'copy', label: t('copyName') });
+          rows.push({ id: 'nameOnlyNote', type: 'note', label: t('nameOnlyNote') });
+          return rows;
+        }
         if (hasOne) {
           // Only the two paths carry a gloss: they are the pair whose names look
           // interchangeable, and picking the wrong one fails quietly. Every other
@@ -743,7 +785,9 @@ window.__ModuleLoader__.load({
             items.map((item, index) =>
               item.type === 'separator'
                 ? h('div', { key: `sep:${index}`, className: 'dam-sep', role: 'separator' })
-                : h(
+                : item.type === 'note'
+                  ? h('div', { key: `note:${index}`, className: 'dam-note' }, item.label)
+                  : h(
                     'button',
                     {
                       key: item.id,
