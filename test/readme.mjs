@@ -1,4 +1,4 @@
-// The README makes concrete claims about behaviour. Check the ones that are
+﻿// The README makes concrete claims about behaviour. Check the ones that are
 // checkable against the source, so the published copy cannot drift from the code.
 import { readFileSync } from 'node:fs';
 
@@ -60,7 +60,7 @@ check('badge timer is 1400ms', client.includes('}, 1400);'));
 
 // 8) Test count claimed in the README is not overstated. The trailing " 项"
 // keeps this from being satisfied by an unrelated year elsewhere in the file.
-const expected = 362;
+const expected = 366;
 check('README states the suite total', new RegExp(`${expected}\\s*项`).test(readme), `expected ${expected} 项`);
 
 // 9) The stale screenshot is not referenced.

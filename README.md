@@ -1,4 +1,4 @@
-# 产物右键菜单 · dsh-artifact-toolkit
+﻿# 产物右键菜单 · dsh-artifact-toolkit
 
 > 给 DeepSeek Harness 会话里的**产物卡片**、**已编辑文件卡片**和**正文里的文件链接**加上右键菜单。
 > 复制文件本身、复制路径、打开文件夹、用默认程序打开 —— 一次右键，不用再点开卡片。
@@ -249,7 +249,7 @@ node test/host.mjs        # Host 半边：请求来源校验、路径校验、�
 node test/clipboard.mjs   # 客户端：能力探测、菜单行、动作分支、忙碌态
 ```
 
-十五套共 **362 项**检查，不需要浏览器和 DSH，纯 Node 即可运行。
+十五套共 **366 项**检查，不需要浏览器和 DSH，纯 Node 即可运行。
 
 `test/pack.mjs` 会真的调用 `npm pack --dry-run`，因此需要一个能启动子进程的环境。其余各套都是纯文件读取。
 

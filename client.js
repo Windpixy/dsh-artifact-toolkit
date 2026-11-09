@@ -201,21 +201,23 @@ window.__ModuleLoader__.load({
      * a menu opened before the probe settles re-renders when it does, instead of
      * silently omitting the row for the first right-click of the page.
      */
+    // Arrow functions, not methods: React stores `subscribe` and `getSnapshot`
+    // as bare functions and calls them with no receiver, so a method reading
+    // `this.listeners` would throw during render. A throw here takes the whole
+    // menu layer down and the right-click appears to do nothing at all.
     const capabilityStore = {
       value: null,
       listeners: new Set(),
-      subscribe(listener) {
-        this.listeners.add(listener);
+      subscribe: (listener) => {
+        capabilityStore.listeners.add(listener);
         return () => {
-          this.listeners.delete(listener);
+          capabilityStore.listeners.delete(listener);
         };
       },
-      snapshot() {
-        return this.value;
-      },
-      publish(next) {
-        this.value = next;
-        for (const listener of this.listeners) listener();
+      snapshot: () => capabilityStore.value,
+      publish: (next) => {
+        capabilityStore.value = next;
+        for (const listener of capabilityStore.listeners) listener();
       },
     };
 

@@ -4,6 +4,7 @@
 // The Host half's own logic is covered by host.mjs; this file covers the browser
 // side plus the contract the two halves share.
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 
 const client = readFileSync(new URL('../client.js', import.meta.url), 'utf8');
 const host = readFileSync(new URL('../index.js', import.meta.url), 'utf8');
@@ -34,6 +35,55 @@ check('the probe result is published to a store', client.includes('capabilitySto
 check('an unreachable Host means no row, not an error', /\.catch\(\(\) => \{[\s\S]{0,200}capabilityStore\.publish\(false\)/.test(client));
 check('the menu subscribes to that store', client.includes('React.useSyncExternalStore(') && client.includes('capabilityStore.snapshot'));
 check('the row list depends on the capability', client.includes('}, [request, t, copyable]);'));
+
+// 2b) The store handed to React must work when called DETACHED.
+//     React keeps `subscribe` and `getSnapshot` as bare functions and invokes them
+//     with no receiver, so a method that reads `this` throws during render. That
+//     throw takes the whole overlay down while the contextmenu handler has already
+//     called preventDefault(), so the symptom is not "the new row is missing" —
+//     it is "right-click shows no menu at all". It shipped once; this stops it.
+{
+  const start = client.indexOf('const capabilityStore = {');
+  const end = client.indexOf('\n    };', start);
+  const literal = start === -1 ? '' : client.slice(start, end + '\n    };'.length);
+  check('the capability store can be lifted for the detached call test', literal.length > 0);
+
+  const scope = {};
+  vm.createContext(scope);
+  vm.runInContext(`${literal}; this.store = capabilityStore;`, scope);
+  const store = scope.store;
+
+  let subscribeError = null;
+  let snapshotError = null;
+  // One try/catch per call, and no `instanceof` filter: the throw happens inside
+  // the vm realm, so an outer-realm `instanceof TypeError` is false and would let
+  // the broken version pass. Any error at all is a failure here.
+  try {
+    const { subscribe } = store; // detached, exactly as React holds it
+    subscribe(() => {});
+  } catch (error) {
+    subscribeError = error;
+  }
+  try {
+    const { snapshot } = store;
+    snapshot();
+  } catch (error) {
+    snapshotError = error;
+  }
+  check('subscribe survives being called detached', subscribeError === null, subscribeError?.message);
+  check('snapshot survives being called detached', snapshotError === null, snapshotError?.message);
+
+  // And the value must reach a detached reader after a publish.
+  store.publish(true);
+  const detached = store.snapshot;
+  let read = null;
+  try {
+    read = detached();
+  } catch (error) {
+    read = `<${error.message}>`;
+  }
+  check('a published value reaches a detached reader', read === true, String(read));
+}
 
 // 3) The capability answer is read from the Host's field, and only `true` counts.
 check('only an explicit true enables the row', client.includes('body?.canCopyFiles === true'));
