@@ -11,11 +11,13 @@ const cases = [];
 const check = (label, ok, detail) => cases.push({ label, ok, detail });
 
 // 1) Claimed menu rows and their grouping.
+check('README lists 复制文件', readme.includes('复制文件'));
 check('README lists 复制完整路径', readme.includes('复制完整路径'));
 check('README lists 复制短路径', readme.includes('复制短路径'));
 check('README lists 复制文件名', readme.includes('复制文件名'));
 check('README lists 复制全部完整路径', readme.includes('复制全部完整路径'));
 check('README lists 复制全部文件名', readme.includes('复制全部文件名'));
+check('README lists 复制全部文件', readme.includes('复制全部文件'));
 check('README lists 打开所在文件夹', readme.includes('打开所在文件夹'));
 check('README lists 用默认程序打开', readme.includes('用默认程序打开'));
 check('README lists 在侧栏预览', readme.includes('在侧栏预览'));
@@ -27,13 +29,16 @@ const zh = (() => {
   for (const m of client.slice(start, client.indexOf('};', start)).matchAll(/^\s{6}(\w+):\s*'([^']*)'/gm)) out[m[1]] = m[2];
   return out;
 })();
-for (const key of ['copyPath', 'copyRelative', 'copyName', 'copyAll', 'copyAllName', 'reveal', 'openWith', 'preview']) {
+for (const key of ['copyPath', 'copyRelative', 'copyName', 'copyFile', 'copyAll', 'copyAllName', 'copyAllFile', 'reveal', 'openWith', 'preview']) {
   check(`dictionary has ${key}`, typeof zh[key] === 'string' && readme.includes(zh[key]), zh[key]);
 }
 
-// 3) "Only the first two have a second line" — checked against the source.
-check('only two rows pass a plain hint', (client.match(/hint: t\('copyPathHint'\)|hint: t\('copyRelativeHint'\)/g) ?? []).length === 2);
+// 3) The hint rows are the ones the README says carry an explanation.
+check('full path and short path carry a hint', (client.match(/hint: t\('copyPathHint'\)|hint: t\('copyRelativeHint'\)/g) ?? []).length === 2);
 check('copyAll also carries a hint', client.includes("t('copyAllHint', params)"));
+check('copyFile carries a hint', client.includes("hint: t('copyFileHint')"));
+check('copyAllFiles carries a hint', client.includes("t('copyAllFileHint', params)"));
+check('README explains why those four share a second line', readme.includes('四个名字看着太接近'));
 
 // 4) Zero third-party dependencies: React only.
 const requires = [...new Set([...client.matchAll(/require\('([^']+)'\)/g)].map(m => m[1]))];
@@ -53,9 +58,10 @@ check('only claims recognised cards', client.includes('if (card === null) return
 check('README says 1.4 seconds', readme.includes('1.4 秒'));
 check('badge timer is 1400ms', client.includes('}, 1400);'));
 
-// 8) Test count claimed in the README is not overstated.
-const expected = 202;
-check('README states the suite total', readme.includes(String(expected)), String(expected));
+// 8) Test count claimed in the README is not overstated. The trailing " 项"
+// keeps this from being satisfied by an unrelated year elsewhere in the file.
+const expected = 362;
+check('README states the suite total', new RegExp(`${expected}\\s*项`).test(readme), `expected ${expected} 项`);
 
 // 9) The stale screenshot is not referenced.
 check('does not reference the old screenshot', !readme.includes('101716'));

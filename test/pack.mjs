@@ -1,16 +1,38 @@
 // Guard the publish: the packed tarball must contain no local paths, no test
 // scaffolding and no runtime junk. Run after `npm pack --dry-run`.
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+//
+// npm is a .cmd shim on Windows, so it runs through cmd.exe. The private cache
+// keeps this check from reading or writing the developer's global npm cache, and
+// it lives under the OS temp directory: `cmd /c` with `/s` mangles a quoted path
+// that contains spaces, which the workspace path does.
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
 
-// `npm` is a .cmd shim on Windows, so it needs a shell; no user input reaches it.
-const out = execFileSync('npm', ['pack', '--dry-run', '--json'], {
+const packageDir = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
+const cache = join(tmpdir(), `dam-pack-${process.pid}`);
+rmSync(cache, { recursive: true, force: true });
+mkdirSync(cache, { recursive: true });
+
+const run = spawnSync('cmd.exe', ['/d', '/s', '/c', `npm pack --dry-run --json --cache ${cache}`], {
   encoding: 'utf8',
-  shell: true,
-  timeout: 120000,
+  cwd: packageDir,
+  windowsHide: true,
+  timeout: 180000,
 });
+rmSync(cache, { recursive: true, force: true });
 
-const info = JSON.parse(out)[0];
+let info;
+try {
+  info = JSON.parse(run.stdout.replace(/^\uFEFF/, ''))[0];
+} catch {
+  console.error('FAIL  npm pack did not return usable JSON');
+  console.error(`      status=${run.status} error=${run.error?.message ?? 'none'}`);
+  console.error(String(run.stderr ?? '').slice(0, 800));
+  process.exit(1);
+}
 const files = info.files.map(f => f.path);
 const cases = [];
 const check = (label, ok, detail) => cases.push({ label, ok, detail });

@@ -40,22 +40,42 @@ window.__ModuleLoader__.load({
     /** Dictionary namespace owned by this plugin. */
     const NS = 'artifact-menu';
 
+    /**
+     * Routes owned by this plugin's Host half. The Host registers the same two
+     * paths; they must stay in step, which `test/host.mjs` checks.
+     */
+    const ROUTE_PREFIX = '/dsh-artifact-toolkit';
+    const CAPABILITY_PATH = `${ROUTE_PREFIX}/capability`;
+    const COPY_FILES_PATH = `${ROUTE_PREFIX}/copy-files`;
+
+    /** How long a capability probe may take before the row is treated as absent. */
+    const PROBE_TIMEOUT_MS = 4000;
+
     const zh = {
       copyPath: '复制完整路径',
       copyPathHint: '整条路径，可粘贴到资源管理器地址栏',
       copyRelative: '复制短路径',
       copyRelativeHint: '相对当前项目目录，适合发给 AI',
       copyName: '复制文件名',
+      copyFile: '复制文件',
+      copyFileHint: '粘贴到微信、邮件或资源管理器，得到文件本身',
       copyAll: '复制全部完整路径',
       copyAllHint: '每行一条，共 {count} 个文件',
       copyAllName: '复制全部文件名',
+      copyAllFile: '复制全部文件',
+      copyAllFileHint: '共 {count} 个文件，一次粘贴带走全部',
       reveal: '打开所在文件夹',
       openWith: '用默认程序打开',
       preview: '在侧栏预览',
       copied: '已复制',
       copiedAll: '已复制 {count} 个路径',
       copiedName: '已复制 {name}',
+      copiedFile: '已复制文件',
+      copiedFiles: '已复制 {count} 个文件',
+      copying: '正在复制…',
       copyFailed: '复制失败',
+      fileCopyFailed: '无法复制文件',
+      fileMissing: '文件已不在这个位置',
       revealFailed: '无法打开所在文件夹',
       openFailed: '无法打开文件',
       previewFailed: '无法在侧栏打开',
@@ -69,16 +89,25 @@ window.__ModuleLoader__.load({
       copyRelative: 'Copy short path',
       copyRelativeHint: 'Relative to the project — handy when talking to an AI',
       copyName: 'Copy file name',
+      copyFile: 'Copy file',
+      copyFileHint: 'Paste into WeChat, mail or Explorer to get the file itself',
       copyAll: 'Copy all full paths',
       copyAllHint: 'One per line, {count} files',
       copyAllName: 'Copy all file names',
+      copyAllFile: 'Copy all files',
+      copyAllFileHint: '{count} files, all in one paste',
       reveal: 'Show in folder',
       openWith: 'Open in default app',
       preview: 'Preview in sidebar',
       copied: 'Copied',
       copiedAll: 'Copied {count} paths',
       copiedName: 'Copied {name}',
+      copiedFile: 'File copied',
+      copiedFiles: 'Copied {count} files',
+      copying: 'Copying…',
       copyFailed: 'Copy failed',
+      fileCopyFailed: 'Could not copy the file',
+      fileMissing: 'The file is no longer at this location',
       revealFailed: 'Could not show in folder',
       openFailed: 'Could not open file',
       previewFailed: 'Could not open in the sidebar',
@@ -150,6 +179,102 @@ window.__ModuleLoader__.load({
     function sessionFileAddress(sessionId, path) {
       const normalized = path.replace(/\\/g, '/');
       return `dsh-resource://file/session/${encodeSegment(sessionId)}/${normalized.split('/').map(encodeSegment).join('/')}`;
+    }
+
+    // ── copying the files themselves ──────────────────────────────────────
+    //
+    // A browser can put text and images on the clipboard, but the format a file
+    // manager, WeChat or a mail client pastes a *file* from is the operating
+    // system's own file list, which only a native process can write. So the
+    // plugin asks its Host half to do it over a local Web route. Everything here
+    // degrades to "no row" rather than to an action that cannot work.
+
+    /**
+     * Ask the Host half whether it can put files on this machine's clipboard.
+     *
+     * Probed once per page and cached: the answer depends on the Host's platform,
+     * which cannot change while the page is open. The browser's own platform is
+     * not consulted — a remote page may be looking at a clipboard on a different
+     * machine, and the write happens where the Host runs.
+     *
+     * The answer arrives asynchronously, so it lives in a tiny subscribable store:
+     * a menu opened before the probe settles re-renders when it does, instead of
+     * silently omitting the row for the first right-click of the page.
+     */
+    const capabilityStore = {
+      value: null,
+      listeners: new Set(),
+      subscribe(listener) {
+        this.listeners.add(listener);
+        return () => {
+          this.listeners.delete(listener);
+        };
+      },
+      snapshot() {
+        return this.value;
+      },
+      publish(next) {
+        this.value = next;
+        for (const listener of this.listeners) listener();
+      },
+    };
+
+    /**
+     * Probe the Host's clipboard capability once, publishing the result.
+     * @returns the probe's promise, for tests and for activation ordering.
+     */
+    function probeCopyFiles() {
+      const controller = typeof AbortController === 'function' ? new AbortController() : null;
+      const timer = controller === null ? null : setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      return fetch(CAPABILITY_PATH, { method: 'GET', signal: controller?.signal })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((body) => {
+          capabilityStore.publish(body?.canCopyFiles === true);
+        })
+        .catch(() => {
+          // An unreachable Host means no clipboard route; the row stays hidden.
+          capabilityStore.publish(false);
+        })
+        .finally(() => {
+          if (timer !== null) clearTimeout(timer);
+        });
+    }
+
+    /**
+     * Put `paths` on the Host machine's clipboard as real files.
+     *
+     * `fetch` rejects on a network failure and resolves on any HTTP status, and
+     * the Host answers 200 even for a refusal, so both layers are inspected: a
+     * non-ok status, a non-JSON body, or `ok !== true` are all failures, and each
+     * carries the Host's own reason for the message.
+     * @param paths - absolute paths to copy.
+     * @returns whether the files reached the clipboard, and why not.
+     */
+    async function copyFiles(paths) {
+      const payload = JSON.stringify({ paths });
+      let response;
+      try {
+        response = await fetch(COPY_FILES_PATH, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: payload,
+        });
+      } catch (error) {
+        return { ok: false, reason: error?.message ?? 'network' };
+      }
+      let body = null;
+      try {
+        body = await response.json();
+      } catch {
+        body = null;
+      }
+      if (body === null) return { ok: false, reason: `HTTP ${response.status}` };
+      if (body.ok !== true) {
+        const reason = body.reason ?? `HTTP ${response.status}`;
+        const missing = body.rejected?.some((entry) => entry.reason === 'missing') === true;
+        return { ok: false, reason, missing };
+      }
+      return { ok: true, count: typeof body.count === 'number' ? body.count : paths.length };
     }
 
     // ── reading paths out of the shipped card DOM ─────────────────────────
@@ -365,20 +490,60 @@ window.__ModuleLoader__.load({
           this.showToastAs('success', text);
           return;
         }
-        // Put a green pill inside the card's own description line rather than
+        this.paintBadge(slot, text, 'success');
+        this.badgeTimer = setTimeout(() => {
+          this.badgeTimer = null;
+          this.clearBadge();
+        }, 1400);
+      }
+
+      /**
+       * Report an action that is still running, in the same slot a success
+       * uses.
+       *
+       * A file copy takes about a second, two orders of magnitude longer than
+       * every other row here. Without this the menu closes and nothing happens
+       * for a moment, which reads as a missed click. The pill is neutral rather
+       * than green: this is "working", not "done", and green would claim a
+       * result that has not arrived yet.
+       * @param anchor - the card or row the notice belongs to.
+       * @param text - the localized progress text.
+       */
+      flashInfo(anchor, text) {
+        this.clearBadge();
+        if (!isElement(anchor)) {
+          this.showToastAs('info', text);
+          return;
+        }
+        const slot = descriptionSlot(anchor);
+        if (slot === null) {
+          this.showToastAs('info', text);
+          return;
+        }
+        // No expiry timer: the action that started this always ends by calling
+        // flash() or showToastAs(), and both clear the pill first.
+        this.paintBadge(slot, text, 'info');
+      }
+
+      /**
+       * Put one pill inside the card's description line, remembering what to
+       * restore later.
+       * @param slot - the 16px description line to borrow.
+       * @param text - what the pill says.
+       * @param tone - 'success' or 'info'.
+       */
+      paintBadge(slot, text, tone) {
+        // Put a pill inside the card's own description line rather than
         // restyling that line: the line clips its content, so painting it green
         // would be cut off at the top and bottom. The pill sits where the text
         // was, so nothing around it moves.
         const pill = document.createElement('span');
         pill.className = 'dam-badge';
+        pill.setAttribute('data-tone', tone);
         pill.textContent = text;
         this.badge = { node: slot, original: slot.textContent, pill };
         slot.textContent = '';
         slot.appendChild(pill);
-        this.badgeTimer = setTimeout(() => {
-          this.badgeTimer = null;
-          this.clearBadge();
-        }, 1400);
       }
 
       clearBadge() {
@@ -439,6 +604,9 @@ window.__ModuleLoader__.load({
   font-size:11px;font-weight:600;line-height:15px;letter-spacing:.2px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;
   box-shadow:0 1px 3px rgba(0,0,0,.18);animation:dam-badge-in .16s ease-out}
+/* Work in progress borrows the neutral tone instead of the success green: the
+   result has not arrived yet, so it must not read as "done". */
+.dam-badge[data-tone=info]{background:var(--dsw-alias-label-secondary, #6b7280)}
 @keyframes dam-badge-in{from{opacity:0;transform:translateY(1px) scale(.9)}to{opacity:1;transform:translateY(0) scale(1)}}
 @media (prefers-reduced-motion:reduce){.dam-badge{animation:none}}
 `;
@@ -447,6 +615,10 @@ window.__ModuleLoader__.load({
     const ICONS = {
       copy: 'M6.5 2.5h5l3 3v7a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z M11.2 2.7v3h3',
       copyAll: 'M5.5 4.5h5l3 3v6a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z M2.5 9.5v-5a1 1 0 0 1 1-1h5',
+      // A sheet with a folded corner: the file itself, as distinct from the
+      // clipboard-with-a-line glyph the two path rows use.
+      file: 'M4 2.5h5l3 3v8a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1z M9.2 2.7v3h3',
+      fileAll: 'M5.2 4.2h3.4l2.2 2.2v6.1a1 1 0 0 1-1 1h-4.6a1 1 0 0 1-1-1v-7.3a1 1 0 0 1 1-1z M2.2 10.6v-6.4a1 1 0 0 1 1-1h2',
       folder: 'M2.5 4.2h4l1.3 1.6h5.7a1 1 0 0 1 1 1v5.4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z',
       open: 'M8 2.8h5.2v5.2 M13.2 2.8 7.6 8.4 M11.4 9.2v3.2a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h3.2',
       preview: 'M2.4 8s2.1-3.6 5.6-3.6S13.6 8 13.6 8s-2.1 3.6-5.6 3.6S2.4 8 2.4 8z M8 9.6a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z',
@@ -512,6 +684,13 @@ window.__ModuleLoader__.load({
       const menuRef = React.useRef(null);
       const [placement, setPlacement] = React.useState(null);
       const [activeIndex, setActiveIndex] = React.useState(-1);
+      // Subscribe to the Host's clipboard capability so a menu opened before the
+      // probe settles gains the row as soon as the answer arrives.
+      const copyable = React.useSyncExternalStore(
+        capabilityStore.subscribe,
+        capabilityStore.snapshot,
+        capabilityStore.snapshot,
+      );
 
       /** The Session whose workspace root contains `path`, else the visible one. */
       const rootFor = React.useCallback(
@@ -565,17 +744,27 @@ window.__ModuleLoader__.load({
           return rows;
         }
         if (hasOne) {
-          // Only the two paths carry a gloss: they are the pair whose names look
-          // interchangeable, and picking the wrong one fails quietly. Every other
-          // row says what it does in its own name, so it stays one line.
+          // Only the rows whose names look interchangeable carry a gloss:
+          // "full path" and "short path" differ in output but not in wording, and
+          // "copy file" sits right beside "copy file name" — picking the wrong
+          // one of any of those fails quietly. Everything else says what it does
+          // in its own name, so it stays one line.
           rows.push({ id: 'copyPath', icon: 'copy', label: t('copyPath'), hint: t('copyPathHint') });
           rows.push({ id: 'copyRelative', icon: 'copy', label: t('copyRelative'), hint: t('copyRelativeHint') });
           rows.push({ id: 'copyName', icon: 'copy', label: t('copyName') });
+          // Offered only when the Host says it can really put a file on the
+          // clipboard; an action that cannot work is worse than an absent row.
+          if (copyable === true) {
+            rows.push({ id: 'copyFile', icon: 'file', label: t('copyFile'), hint: t('copyFileHint') });
+          }
         }
         if (many) {
           if (hasOne) rows.push({ type: 'separator' });
           rows.push({ id: 'copyAll', icon: 'copyAll', label: t('copyAll'), hint: t('copyAllHint', params) });
           rows.push({ id: 'copyAllName', icon: 'copyAll', label: t('copyAllName') });
+          if (copyable === true) {
+            rows.push({ id: 'copyAllFiles', icon: 'fileAll', label: t('copyAllFile'), hint: t('copyAllFileHint', params) });
+          }
         }
         if (hasOne) {
           rows.push({ type: 'separator' });
@@ -584,7 +773,7 @@ window.__ModuleLoader__.load({
           rows.push({ id: 'preview', icon: 'preview', label: t('preview') });
         }
         return rows;
-      }, [request, t]);
+      }, [request, t, copyable]);
 
       const selectable = items.filter((item) => item.type === undefined);
 
@@ -661,6 +850,34 @@ window.__ModuleLoader__.load({
                 return;
               }
               confirm(await copyText(rows.join('\n')), t('copiedAll', { count: String(rows.length) }));
+              return;
+            }
+            if (id === 'copyFile' || id === 'copyAllFiles') {
+              // Unlike a text copy this takes about a second: a native helper
+              // writes the system file list. Say so on the card immediately, so
+              // the wait reads as progress rather than as a missed click.
+              const targets =
+                id === 'copyFile'
+                  ? abs === null
+                    ? []
+                    : [abs]
+                  : request.paths.map((item) => absolute(item)).filter((value) => value !== null);
+              if (targets.length === 0) {
+                store.showToastAs('error', t('fileCopyFailed'));
+                return;
+              }
+              store.flashInfo(anchor, t('copying'));
+              const result = await copyFiles(targets);
+              if (!result.ok) {
+                // "The file is gone" is actionable and means something different
+                // from "the clipboard write failed", so they are not merged.
+                const label = result.missing === true ? t('fileMissing') : t('fileCopyFailed');
+                console.warn('[artifact-menu] copy file failed', result.reason);
+                store.showToastAs('error', `${label}（${result.reason}）`);
+                return;
+              }
+              const count = result.count;
+              store.flash(anchor, count > 1 ? t('copiedFiles', { count: String(count) }) : t('copiedFile'));
               return;
             }
             if ((id === 'reveal' || id === 'openWith') && abs !== null) {
@@ -874,6 +1091,13 @@ window.__ModuleLoader__.load({
         () => () => store.dispose(),
         'artifact-menu: store',
       );
+
+      // Ask the Host once, at activation, whether it can put a file on the
+      // clipboard. Deciding up front keeps the row out of the first right-click
+      // of the page and stops the question being asked again on every menu.
+      ctx.effect(() => {
+        void probeCopyFiles();
+      }, 'artifact-menu: clipboard capability');
 
       // The one gesture this plugin adds. It claims only right-clicks that land
       // on a recognised file card; everything else keeps the native menu.

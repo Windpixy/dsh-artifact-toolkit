@@ -126,6 +126,41 @@ store.toast = null;
 store.showToastAs('error', '复制失败');
 check('failures use the error tone', store.toast?.tone === 'error', JSON.stringify(store.toast));
 
+// 7) Work in progress uses the same slot but a neutral tone: a file copy takes
+//    about a second, and green would claim a result that has not arrived yet.
+store.toast = null;
+store.flashInfo(card, '正在复制…');
+const busyPill = descLine.children.find(c => c.className === 'dam-badge');
+check('the progress pill is inside the card line', busyPill !== undefined);
+check('it says it is working', descLine.textContent === '正在复制…', descLine.textContent);
+check('it is not painted as success', busyPill?.getAttribute('data-tone') === 'info', busyPill?.getAttribute('data-tone'));
+check('no success flash while working', store.toast === null, JSON.stringify(store.toast));
+
+// The progress pill must survive until the action reports, and then be replaced
+// by the outcome rather than stacking a second pill beside it.
+store.flash(card, '已复制文件');
+check('the outcome replaces the progress pill', descLine.children.filter(c => c.className === 'dam-badge').length === 1);
+check(
+  'the outcome is the success tone',
+  descLine.children.find(c => c.className === 'dam-badge')?.getAttribute('data-tone') === 'success',
+);
+timers.at(-1)();
+check('the card line is restored after the outcome', descLine.textContent === '在侧边栏预览', descLine.textContent);
+
+// A card without a description line falls back to the neutral notice, not green.
+store.toast = null;
+store.flashInfo(changedCard, '正在复制…');
+check('a row without a line uses the notice', store.toast?.text === '正在复制…', JSON.stringify(store.toast));
+check('that notice is neutral', store.toast?.tone === 'info', JSON.stringify(store.toast));
+
+// 8) The neutral tone is styled, and only the tone attribute differs.
+const infoCss = code.slice(code.indexOf('.dam-badge[data-tone=info]'));
+check(
+  'the neutral tone has its own rule',
+  /background:\s*var\(--dsw-alias-label-secondary/.test(infoCss.slice(0, 200)),
+  infoCss.slice(0, 120),
+);
+
 let failed = 0;
 for (const c of cases) {
   if (!c.ok) failed += 1;

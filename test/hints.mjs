@@ -19,16 +19,29 @@ const en = dict('en');
 const cases = [];
 const check = (label, ok, detail) => cases.push({ label, ok, detail });
 
-// Rows that explain themselves.
-const WITH_HINT = ['copyPath', 'copyRelative', 'copyAll'];
+// Rows that explain themselves: the four whose names look interchangeable.
+// "full path" / "short path" / "copy file" / "copy file name" all sound alike and
+// produce completely different things, and choosing wrong fails silently.
+const WITH_HINT = ['copyPath', 'copyRelative', 'copyAll', 'copyFile', 'copyAllFiles'];
 // Rows that must stay one line.
 const WITHOUT_HINT = ['copyName', 'copyAllName', 'reveal', 'openWith', 'preview'];
 
-// 1) The glossed rows have text in both languages.
+// Rows that carry a hint in the dictionary must actually pass it in the menu, or
+// the gloss is dead copy.
+const HINT_KEYS = { copyFile: 'copyFileHint', copyAllFiles: 'copyAllFileHint' };
+
+// 1) The glossed rows have text in both languages. The two file rows use their
+//    own key names (`copyFileHint`, `copyAllFileHint`), not `<id>Hint`.
 for (const id of WITH_HINT) {
-  const key = `${id}Hint`;
+  const key = HINT_KEYS[id] ?? `${id}Hint`;
   check(`zh defines ${key}`, typeof zh[key] === 'string' && zh[key].length > 0, zh[key]);
   check(`en defines ${key}`, typeof en[key] === 'string' && en[key].length > 0, en[key]);
+}
+
+// 2) And the menu actually passes each one.
+for (const id of WITH_HINT) {
+  const key = HINT_KEYS[id] ?? `${id}Hint`;
+  check(`${id} row passes its hint`, src.includes(`t('${key}'`), key);
 }
 
 // 2) The one-line rows carry no hint at all.
@@ -71,5 +84,5 @@ for (const c of cases) {
   if (!c.ok) failed += 1;
   console.log(`${c.ok ? 'PASS' : 'FAIL'}  ${c.label}${c.ok ? '' : ` -> ${c.detail ?? ''}`}`);
 }
-console.log(failed === 0 ? `\nTwo glossed rows, five one-line rows (${cases.length} checks).` : `\n${failed} failed.`);
+console.log(failed === 0 ? `\n${WITH_HINT.length} glossed rows, ${WITHOUT_HINT.length} one-line rows (${cases.length} checks).` : `\n${failed} failed.`);
 process.exitCode = failed === 0 ? 0 : 1;

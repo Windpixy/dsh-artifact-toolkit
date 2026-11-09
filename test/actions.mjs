@@ -12,7 +12,7 @@ const cases = [];
 const check = (label, ok, detail) => cases.push({ label, ok, detail });
 
 // 1) Every required action is dispatched.
-for (const id of ['copyPath', 'copyRelative', 'copyName', 'copyAll', 'copyAllName', 'reveal', 'openWith', 'preview']) {
+for (const id of ['copyPath', 'copyRelative', 'copyName', 'copyAll', 'copyAllName', 'copyFile', 'copyAllFiles', 'reveal', 'openWith', 'preview']) {
   check(`dispatches ${id}`, run.includes(`'${id}'`));
 }
 
@@ -72,6 +72,32 @@ check('preview address is Session-scoped', run.includes('sessionFileAddress('));
 // 7) Every branch that needs a path is guarded against a null path.
 const copyGuards = (run.match(/&& (abs|path) !== null/g) ?? []).length;
 check('null paths are guarded before use', copyGuards >= 4, `guards=${copyGuards}`);
+
+// 8) Copying a file is not a clipboard text write: it goes to the Host, says it
+//    is working while it waits, and never reports a partial result as success.
+const fileBranch = run.slice(run.indexOf("id === 'copyFile'"), run.indexOf("id === 'reveal' || id === 'openWith'"));
+check('the file branch goes to the Host, not copyText', !fileBranch.includes('copyText('), fileBranch.slice(0, 160).replace(/\s+/g, ' '));
+check('the file branch calls copyFiles', fileBranch.includes('copyFiles('));
+check('the wait is announced before it is waited for', fileBranch.includes("flashInfo(anchor, t('copying'))"));
+// The progress pill must be painted BEFORE the await, otherwise a slow Host shows
+// nothing and the click reads as a miss.
+check(
+  'the progress notice precedes the await',
+  fileBranch.indexOf('flashInfo(') !== -1 &&
+    fileBranch.indexOf('flashInfo(') < fileBranch.indexOf('await copyFiles('),
+);
+// The failure arm must end in an error notice and never fall through to the
+// success flash. Assert over the arm's own text rather than a character budget.
+const failStart = fileBranch.indexOf('if (!result.ok)');
+const failArm = failStart === -1 ? '' : fileBranch.slice(failStart, fileBranch.indexOf('return;', failStart) + 'return;'.length);
+check('a failed copy reports an error', failArm.includes("showToastAs('error'"), failArm.replace(/\s+/g, ' ').slice(0, 160));
+check('a failed copy never reaches the success flash', !failArm.includes('store.flash('), failArm.replace(/\s+/g, ' ').slice(0, 160));
+check('a copy failure carries the Host reason', fileBranch.includes('result.reason'));
+// "The file is gone" and "the write failed" are different problems.
+check('a missing file is named as such', fileBranch.includes("t('fileMissing')"));
+check('a missing file is distinguished from a failed write', fileBranch.includes('result.missing'));
+// The confirmation counts what actually landed.
+check('the confirmation counts what was written', fileBranch.includes('copiedFiles') && fileBranch.includes('copiedFile'));
 
 let failed = 0;
 for (const c of cases) {
